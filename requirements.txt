@@ -28,3 +28,4 @@ urllib3==2.2.2
 Werkzeug==3.0.3
 wrapt==1.16.0
 yarl==1.9.4
+gunicorn==22.0.0
