@@ -12,13 +12,12 @@
 #  License for the specific language governing permissions and limitations
 #  under the License.
 
-
 import os
 import sys
 from argparse import ArgumentParser
 
 from flask import Flask, abort, request
-from linebot import WebhookParser
+from linebot.v3 import WebhookHandler
 from linebot.v3.exceptions import InvalidSignatureError
 from linebot.v3.messaging import (
     ApiClient,
@@ -41,48 +40,46 @@ if channel_access_token is None:
     print("Specify LINE_CHANNEL_ACCESS_TOKEN as environment variable.")
     sys.exit(1)
 
-parser = WebhookParser(channel_secret)
+handler = WebhookHandler(channel_secret)
 
 configuration = Configuration(access_token=channel_access_token)
 
 
 @app.route("/callback", methods=["POST"])
 def callback():
+    # get X-Line-Signature header value
     signature = request.headers["X-Line-Signature"]
 
     # get request body as text
     body = request.get_data(as_text=True)
     app.logger.info("Request body: " + body)
 
-    # parse webhook body
+    # handle webhook body
     try:
-        events = parser.parse(body, signature)
+        handler.handle(body, signature)
     except InvalidSignatureError:
         abort(400)
 
-    # if event is MessageEvent and message is TextMessage, then echo text
-    for event in events:
-        if not isinstance(event, MessageEvent):
-            continue
-        if not isinstance(event.message, TextMessageContent):
-            continue
-        with ApiClient(configuration) as api_client:
-            line_bot_api = MessagingApi(api_client)
-            line_bot_api.reply_message_with_http_info(
-                ReplyMessageRequest(
-                    reply_token=event.reply_token,
-                    messages=[TextMessage(text=event.message.text)],
-                )
-            )
-
     return "OK"
+
+
+@handler.add(MessageEvent, message=TextMessageContent)
+def message_text(event):
+    with ApiClient(configuration) as api_client:
+        line_bot_api = MessagingApi(api_client)
+        line_bot_api.reply_message_with_http_info(
+            ReplyMessageRequest(
+                reply_token=event.reply_token,
+                messages=[TextMessage(text=event.message.text)],
+            )
+        )
 
 
 if __name__ == "__main__":
     arg_parser = ArgumentParser(
         usage="Usage: python " + __file__ + " [--port <port>] [--help]"
     )
-    arg_parser.add_argument("-p", "--port", type=int, default=8000, help="port")
+    arg_parser.add_argument("-p", "--port", default=8000, help="port")
     arg_parser.add_argument("-d", "--debug", default=False, help="debug")
     options = arg_parser.parse_args()
 
